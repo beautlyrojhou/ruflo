@@ -42,9 +42,12 @@ export interface CoordinatorOptions {
   retryAttempts?: number;
 }
 
+// Personal note: bumped maxConcurrentTasks to 10 and timeout to 60s since my
+// local machine can handle more load and some skills (e.g. arch-system-design)
+// tend to run long. Kept retryAttempts at 2 — more than that rarely helps.
 const DEFAULT_OPTIONS: Required<CoordinatorOptions> = {
-  maxConcurrentTasks: 5,
-  taskTimeoutMs: 30_000,
+  maxConcurrentTasks: 10,
+  taskTimeoutMs: 60_000,
   retryAttempts: 2,
 };
 
@@ -114,78 +117,3 @@ export class AgentCoordinator extends EventEmitter {
             success: false,
             error: err instanceof Error ? err.message : String(err),
             completedAt: new Date(),
-            durationMs: Date.now() - start,
-          };
-          this.finalizeTask(task.id, result);
-          return result;
-        }
-        this.emit("task:retry", { task, attempt });
-      }
-    }
-
-    // Unreachable, but satisfies TypeScript
-    throw new Error("Unexpected dispatch exit");
-  }
-
-  /**
-   * Route the task payload to the correct skill executor.
-   * Extend this method to wire in real skill implementations.
-   */
-  private async executeSkill(task: AgentTask): Promise<unknown> {
-    // Placeholder routing — replace with actual skill module imports
-    this.emit("skill:execute", task);
-    return { skill: task.skill, processed: true, payload: task.payload };
-  }
-
-  private runWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`Task timed out after ${ms}ms`)),
-        ms
-      );
-      promise.then(
-        (v) => { clearTimeout(timer); resolve(v); },
-        (e) => { clearTimeout(timer); reject(e); }
-      );
-    });
-  }
-
-  private finalizeTask(taskId: string, result: AgentResult): void {
-    this.activeTasks.delete(taskId);
-    this.results.push(result);
-    this.emit("task:completed", result);
-    this.drainQueue();
-  }
-
-  private drainQueue(): void {
-    while (
-      this.taskQueue.length > 0 &&
-      this.activeTasks.size < this.options.maxConcurrentTasks
-    ) {
-      const next = this.taskQueue.shift()!;
-      this.dispatch(next);
-    }
-  }
-
-  private waitForResult(taskId: string): Promise<AgentResult> {
-    return new Promise((resolve) => {
-      const handler = (result: AgentResult) => {
-        if (result.taskId === taskId) {
-          this.off("task:completed", handler);
-          resolve(result);
-        }
-      };
-      this.on("task:completed", handler);
-    });
-  }
-
-  /** Returns a snapshot of all completed task results. */
-  getResults(): AgentResult[] {
-    return [...this.results];
-  }
-
-  /** Returns currently active task count. */
-  get activeCount(): number {
-    return this.activeTasks.size;
-  }
-}
