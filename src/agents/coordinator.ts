@@ -45,10 +45,12 @@ export interface CoordinatorOptions {
 // Personal note: bumped maxConcurrentTasks to 10 and timeout to 60s since my
 // local machine can handle more load and some skills (e.g. arch-system-design)
 // tend to run long. Kept retryAttempts at 2 — more than that rarely helps.
+// Also bumped retryAttempts to 3 after noticing flaky failures on code-review
+// tasks during network hiccups; the third attempt almost always succeeds.
 const DEFAULT_OPTIONS: Required<CoordinatorOptions> = {
   maxConcurrentTasks: 10,
   taskTimeoutMs: 60_000,
-  retryAttempts: 2,
+  retryAttempts: 3,
 };
 
 /**
@@ -110,10 +112,4 @@ export class AgentCoordinator extends EventEmitter {
         return result;
       } catch (err) {
         attempt++;
-        if (attempt > this.options.retryAttempts) {
-          const result: AgentResult = {
-            taskId: task.id,
-            skill: task.skill,
-            success: false,
-            error: err instanceof Error ? err.message : String(err),
-            completedAt: new Date(),
+        if (attempt > this.options.retryAttempts) 
